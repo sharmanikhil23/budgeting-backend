@@ -1,4 +1,4 @@
-package com.budgeting.backend.UnitTest;
+package com.budgeting.backend.UnitTest.helpers;
 import com.budgeting.backend.global.JWT;
 import io.jsonwebtoken.ExpiredJwtException;
 import org.junit.jupiter.api.BeforeAll;

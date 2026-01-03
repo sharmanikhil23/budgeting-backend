@@ -14,6 +14,5 @@ public class HouseHold {
     @NotNull(message = "HouseHold name is required")
     private String name;
 
-    @NotNull(message = "Please Select Currency")
     private String currency;
 }

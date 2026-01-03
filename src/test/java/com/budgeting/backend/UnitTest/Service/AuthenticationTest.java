@@ -20,8 +20,6 @@ public class AuthenticationTest {
     @Autowired
     AuthenticationService authenticationService;
 
-    User user;
-
     User primaryUser = null;
 
     // we will create a user before we ran any test

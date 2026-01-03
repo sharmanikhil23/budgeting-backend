@@ -21,8 +21,8 @@ public class HouseHoldSecurity {
         return houseHoldMemberRepository.findByHouseholdIdAndUserId(houseHoldId, userId).orElse(null);
     }
 
-    public boolean isUserPartOfHouseHold(String houseHoldId, String userId){
-        HouseHoldMemberEntity houseHoldMemberEntity = getHouseHoldMemberEntity(houseHoldId,userId);
+    public boolean isUserPartOfHouseHold(String houseHoldId, ObjectId userId){
+        HouseHoldMemberEntity houseHoldMemberEntity = getHouseHoldMemberEntity(houseHoldId,userId.toString());
         if(houseHoldMemberEntity!=null){
             return true;
         }else{

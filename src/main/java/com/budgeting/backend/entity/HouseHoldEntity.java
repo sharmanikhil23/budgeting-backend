@@ -5,6 +5,7 @@ import com.budgeting.backend.global.enums.Currency;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -14,6 +15,7 @@ import java.time.Instant;
 
 @Document("households")
 @Getter
+@Setter
 @NoArgsConstructor
 public class HouseHoldEntity {
 
@@ -24,7 +26,7 @@ public class HouseHoldEntity {
     private String name;
 
     @NotNull
-    @Indexed(unique = true)
+    @Indexed
     private ObjectId createdBy; // user who created the household
 
     private Instant createdAt;

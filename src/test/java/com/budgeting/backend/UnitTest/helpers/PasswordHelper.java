@@ -1,4 +1,4 @@
-package com.budgeting.backend.UnitTest;
+package com.budgeting.backend.UnitTest.helpers;
 
 import org.junit.jupiter.api.Test;
 

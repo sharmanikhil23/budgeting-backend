@@ -36,9 +36,11 @@ public class PasswordHelper{
         }
     }
 
-    public static String generateSixDigitCode() {
-        SecureRandom random = new SecureRandom();
-        int number = random.nextInt(999999); // Generates 0-999998
-        return String.format("%06d", number);
+    public static String generateInviteCode() {
+        return java.util.UUID.randomUUID()
+                .toString()
+                .replace("-", "")
+                .substring(0, 8)
+                .toUpperCase();
     }
 }

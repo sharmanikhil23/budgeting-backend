@@ -26,14 +26,20 @@ public class HouseHoldController {
         return houseHoldService.makeHouseHold(houseHold, user);
     }
 
+    @PostMapping("/update/{houseHoldId}")
+    public ResponseEntity<?> updateHouseHold(@RequestBody HouseHold houseHold,@PathVariable String houseHoldId,
+                                             @AuthenticationPrincipal User user){
+        return houseHoldService.updateHouseHold(houseHold, houseHoldId ,user);
+    }
+
     @PostMapping("/add-users/{inviteCode}")
     public ResponseEntity<?> addMembersInHouseHold(@PathVariable String inviteCode,
                                                    @AuthenticationPrincipal User user){
-        return houseHoldService.addUsersInHouseHold(inviteCode,user.getId());
+        return houseHoldService.addUsersInHouseHold(inviteCode,user);
     }
 
     @GetMapping("/invite-code/{houseHoldId}")
     public ResponseEntity<?> getInviteCode(@PathVariable String houseHoldId,@AuthenticationPrincipal User user){
-        return houseHoldService.getInviteCode(houseHoldId, user.getId());
+        return houseHoldService.getInviteCode(houseHoldId, user);
     }
 }

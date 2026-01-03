@@ -15,6 +15,9 @@ jwt:
   refresh-token-expiration: 2592000000 # 30 days in ms
 
 
+cache:
+  life: 60000 # 10 minutes in ms
+
 
 
 server:
