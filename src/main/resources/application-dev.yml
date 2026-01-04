@@ -19,7 +19,13 @@ cache:
   life: 60000 # 10 minutes in ms
 
 
-
 server:
   address: 0.0.0.0
   port: 8080
+
+springdoc:
+  swagger-ui:
+    path: /swagger
+  api-docs:
+    path: /v3/api-docs
+

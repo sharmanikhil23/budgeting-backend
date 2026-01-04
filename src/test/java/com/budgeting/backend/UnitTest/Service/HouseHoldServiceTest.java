@@ -12,7 +12,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 
@@ -91,7 +90,8 @@ class HouseHoldServiceTest extends Base {
 
     @Test
     public void addingExistingUserInHouseHold(){
-        User newUser = super.getUser(1);
+        // first create a new user which we want to add to the household
+        User newUser = super.createNewUser();
 
         String inviteCode = null;
         // now primary user or the admin will generate the code to add the user
@@ -102,6 +102,17 @@ class HouseHoldServiceTest extends Base {
         inviteCode = body.get("inviteCode").toString();
 
         ResponseEntity<?> addedUser = houseHoldService.addUsersInHouseHold(inviteCode, newUser);
+        Assertions.assertEquals(HttpStatus.CREATED,addedUser.getStatusCode(),"Must return 201 status code");
+
+        inviteCode = null;
+        // now primary user or the admin will generate the code to add the user
+        temp = houseHoldService.getInviteCode(houseHoldId,getPrimaryUser());
+        Assertions.assertEquals(HttpStatus.CREATED,temp.getStatusCode(),"Must be 201 status code");
+
+        body = (Map<String, Object>) temp.getBody();
+        inviteCode = body.get("inviteCode").toString();
+
+        addedUser = houseHoldService.addUsersInHouseHold(inviteCode, newUser);
         Assertions.assertEquals(HttpStatus.CONFLICT,addedUser.getStatusCode(),"Must return 201 status code");
     }
 
