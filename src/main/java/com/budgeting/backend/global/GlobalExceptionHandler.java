@@ -1,6 +1,9 @@
 package com.budgeting.backend.global;
 
+import com.budgeting.backend.dto.out.ApiResponseDTO;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -8,66 +11,67 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.HashMap;
-import java.util.Map;
+import java.util.stream.Collectors;
 
+@Slf4j // This provides the 'log' object automatically
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // 400 - Validation errors (@Valid)
+    // 400 - Validation errors
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> handleValidationExceptions(
-            MethodArgumentNotValidException ex) {
+    public ResponseEntity<ApiResponseDTO<Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
+        String details = ex.getBindingResult().getFieldErrors().stream()
+                .map(error -> error.getField() + ": " + error.getDefaultMessage())
+                .collect(Collectors.joining(", "));
 
-        Map<String, String> fieldErrors = new HashMap<>();
-        ex.getBindingResult().getFieldErrors().forEach(error ->
-                fieldErrors.put(error.getField(), error.getDefaultMessage())
-        );
-
-        return buildErrorResponse("Input validation failed", fieldErrors, HttpStatus.BAD_REQUEST);
+        return buildErrorResponse("Input validation failed", details, HttpStatus.BAD_REQUEST);
     }
 
-    // 400 - Illegal arguments (business validation)
+    // 400 - Illegal arguments
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, Object>> handleIllegalArgument(
-            IllegalArgumentException ex) {
-
-        // Example: split message by commas for multiple errors
-        String[] errorsArray = ex.getMessage().split(",");
-        Map<String, String> fieldErrors = new HashMap<>();
-        for (int i = 0; i < errorsArray.length; i++) {
-            fieldErrors.put("error" + (i + 1), errorsArray[i].trim());
-        }
-
-        return buildErrorResponse("Input validation failed", fieldErrors, HttpStatus.BAD_REQUEST);
+    public ResponseEntity<ApiResponseDTO<Object>> handleIllegalArgument(IllegalArgumentException ex) {
+        return buildErrorResponse("Invalid request", ex.getMessage(), HttpStatus.BAD_REQUEST);
     }
 
-    // 409 - MongoDB unique constraint violations
+    // 409 - Concurrency Conflict
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiResponseDTO<Object>> handleOptimisticLocking(OptimisticLockingFailureException ex) {
+        return buildErrorResponse("Conflict", "The record was updated by another user. Please refresh.", HttpStatus.CONFLICT);
+    }
+
+    // 409 - Duplicate Key
     @ExceptionHandler(DuplicateKeyException.class)
-    public ResponseEntity<Map<String, Object>> handleDuplicateKey(DuplicateKeyException ex) {
-
-        Map<String, String> errors = new HashMap<>();
-        errors.put("email", "This email is already registered");
-
-        return buildErrorResponse("Duplicate resource", errors, HttpStatus.CONFLICT);
+    public ResponseEntity<ApiResponseDTO<Object>> handleDuplicateKey(DuplicateKeyException ex) {
+        return buildErrorResponse("Conflict", "A resource with this unique identifier already exists.", HttpStatus.CONFLICT);
     }
 
-    // 500 - Catch-all
+    // 500 - Catch-all (Hides internal details)
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleGeneralException(Exception ex) {
-        return buildErrorResponse("Internal server error", null, HttpStatus.INTERNAL_SERVER_ERROR);
+    public ResponseEntity<ApiResponseDTO<Object>> handleGeneralException(Exception ex) {
+        // 1. Log the full stack trace for the developer to see in the console/logs
+        log.error("INTERNAL SERVER ERROR: ", ex);
+
+        // 2. Send a generic, safe message to the client
+        return buildErrorResponse(
+                "Internal server error",
+                "An unexpected error occurred. Please try again later or contact support if the issue persists.",
+                HttpStatus.INTERNAL_SERVER_ERROR
+        );
     }
 
-    // Helper to keep response consistent
-    private ResponseEntity<Map<String, Object>> buildErrorResponse(
+    // Helper using your ApiResponseDTO
+    private ResponseEntity<ApiResponseDTO<Object>> buildErrorResponse(
             String message,
-            Map<String, String> errors,
+            String errorDetails,
             HttpStatus status) {
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("status", "error");
-        response.put("message", message);
-        response.put("errors", errors);
+        ApiResponseDTO<Object> response = new ApiResponseDTO<>(
+                "error",         // status
+                message,         // message
+                new HashMap<>(), // data (empty object {})
+                errorDetails     // errors (string details)
+        );
 
-        return ResponseEntity.status(status).body(response);
+        return new ResponseEntity<>(response, status);
     }
 }

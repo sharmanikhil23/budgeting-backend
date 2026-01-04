@@ -8,6 +8,25 @@ spring:
       password: root123
       authentication-database: admin
       auto-index-creation: true
+  output:
+    ansi:
+      enabled: ALWAYS
+
+# 2. Custom log pattern for readability
+# Format: [Time] [Level] [Thread] [Class] : Message
+logging:
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n"
+  level:
+    root: INFO
+    com:
+      budgeting:
+        backend: DEBUG
+    org:
+      springframework:
+        security: INFO
+        data:
+          mongodb: DEBUG
 
 jwt:
   secret: "your-very-long-secret-key-at-least-32-characters-long!!"

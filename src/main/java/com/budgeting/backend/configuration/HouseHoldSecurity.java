@@ -40,5 +40,13 @@ public class HouseHoldSecurity {
            return false;
         }
     }
+
+    public boolean isOwner(String houseHoldId, String userId){
+        HouseHoldMemberEntity houseHoldMemberEntity = getHouseHoldMemberEntity(houseHoldId,userId);
+        if(houseHoldMemberEntity != null && houseHoldMemberEntity.getRole() == HouseHoldRoles.OWNER ) {
+            return true;
+        }
+        return false;
+    }
 }
 

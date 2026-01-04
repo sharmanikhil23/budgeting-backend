@@ -41,10 +41,6 @@ public class TransactionAuditEntity {
     private Boolean oldIsDeleted;
     private Boolean newIsDeleted;
 
-    // Optional: store full old/new state if you prefer
-    private Map<String, Object> oldState;
-    private Map<String, Object> newState;
-
     public TransactionAuditEntity(TransactionEntity oldTransaction, TransactionEntity newTransaction, ObjectId performedBy, String action){
         this.transactionId = oldTransaction != null ? oldTransaction.getId() : (newTransaction != null ? newTransaction.getId() : null);
         this.householdId = oldTransaction != null ? oldTransaction.getHouseholdId() : newTransaction.getHouseholdId();

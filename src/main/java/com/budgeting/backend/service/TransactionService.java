@@ -4,6 +4,7 @@ import com.budgeting.backend.configuration.HouseHoldSecurity;
 import com.budgeting.backend.configuration.TransactionSecurity;
 import com.budgeting.backend.dto.in.Transaction;
 import com.budgeting.backend.dto.in.UpdateTransaction;
+import com.budgeting.backend.dto.out.ApiResponseDTO;
 import com.budgeting.backend.entity.TransactionAuditEntity;
 import com.budgeting.backend.entity.TransactionEntity;
 import com.budgeting.backend.entity.User;
@@ -39,72 +40,31 @@ public class TransactionService {
     }
 
     @PreAuthorize("@houseHoldSecurity.isUserPartOfHouseHold(#transaction.houseHoldId, #user.id)")
-    public ResponseEntity<HashMap<String,Object>> save(Transaction transaction, User user){
-        TransactionEntity transactionEntity = transactionRepository.save(new TransactionEntity(transaction,user));
+    public ResponseEntity<ApiResponseDTO<Object>> save(Transaction transaction, User user) {
+        TransactionEntity transactionEntity = transactionRepository.save(new TransactionEntity(transaction, user));
+        transactionAuditRepository.save(new TransactionAuditEntity(null, transactionEntity, user.getId(), "CREATE"));
 
-        // Create audit record
-        TransactionAuditEntity audit = new TransactionAuditEntity(
-                null,
-                transactionEntity,
-                user.getId(),
-                "CREATE"
-        );
-        transactionAuditRepository.save(audit);
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(
-                new HashMap<>() {{
-                    put("status", "success");
-                    put("message", "Created Successfully");
-                    put("error", null);
-                }}
-        );
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(new ApiResponseDTO<>("success", "Created Successfully", null, null));
     }
 
-    @PreAuthorize(
-            "@houseHoldSecurity.isUserPartOfHouseHold(#transaction.houseHoldId, #user.id) && " +
-                    "@transactionSecurity.isCreatedByUserOrAdminOrAbove(#transaction.houseHoldId, #user.id)"
-    )
-    public ResponseEntity<?> update(UpdateTransaction transaction, User user) {
-        TransactionEntity transactionEntity = transactionRepository.findById(new ObjectId(transaction.getTransactionId())).orElse(null);
+    @PreAuthorize("@houseHoldSecurity.isUserPartOfHouseHold(#transaction.houseHoldId, #user.id) && @transactionSecurity.isCreatedByUserOrAdminOrAbove(#transaction.houseHoldId, #user.id)")
+    public ResponseEntity<ApiResponseDTO<Object>> update(UpdateTransaction transaction, User user) {
+        TransactionEntity entity = transactionRepository.findById(new ObjectId(transaction.getTransactionId()))
+                .orElseThrow(() -> new IllegalArgumentException("Transaction not found"));
 
-        if(transactionEntity != null){
-            // Keep old copy for audit
-            TransactionEntity oldTransaction = new TransactionEntity(transactionEntity, user);
+        TransactionEntity oldTransaction = new TransactionEntity(entity, user);
 
-            transactionEntity.setUpdatedBy(user.getId());
-            transactionEntity.setUpdatedAt(Instant.now());
-            transactionEntity.setAmount(transaction.getAmount());
-            transactionEntity.setNotes(transaction.getNotes());
-            transactionEntity.setCategoryId(new ObjectId(transaction.getCategoryId()));
-            transactionEntity.setSubCategoryId(new ObjectId(transaction.getSubCategoryId()));
+        // Update fields...
+        entity.setAmount(transaction.getAmount());
+        entity.setNotes(transaction.getNotes());
+        entity.setUpdatedAt(Instant.now());
+        entity.setUpdatedBy(user.getId());
 
-            transactionRepository.save(transactionEntity);
+        transactionRepository.save(entity);
+        transactionAuditRepository.save(new TransactionAuditEntity(oldTransaction, entity, user.getId(), "UPDATE"));
 
-            // Save audit
-            TransactionAuditEntity audit = new TransactionAuditEntity(
-                    oldTransaction,
-                    transactionEntity,
-                    user.getId(),
-                    "UPDATE"
-            );
-            transactionAuditRepository.save(audit);
-
-            return ResponseEntity.status(HttpStatus.OK).body(
-                    new HashMap<>() {{
-                        put("status", "success");
-                        put("message", "Updated Successfully");
-                        put("error", null);
-                    }}
-            );
-        }
-
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                new HashMap<>() {{
-                    put("status", "error");
-                    put("message", "Transaction not found");
-                    put("error", "NOT_FOUND");
-                }}
-        );
+        return ResponseEntity.ok(new ApiResponseDTO<>("success", "Updated Successfully", null, null));
     }
 
     @PreAuthorize(

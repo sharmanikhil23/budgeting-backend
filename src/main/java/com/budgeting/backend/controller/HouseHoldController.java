@@ -1,15 +1,60 @@
 package com.budgeting.backend.controller;
 
 import com.budgeting.backend.dto.in.HouseHold;
+import com.budgeting.backend.dto.out.ApiResponseDTO;
+import com.budgeting.backend.dto.out.HouseHoldDTO;
 import com.budgeting.backend.entity.User;
 import com.budgeting.backend.service.HouseHoldService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Optional;
+
 @RestController
-@RequestMapping("/households")
+@RequestMapping("/household")
+@ApiResponses(value = {
+        @ApiResponse(
+                responseCode = "400",
+                description = "Invalid input - validation failed",
+                content = @Content(
+                        mediaType = "application/json",
+                        examples = @ExampleObject(
+                                value = "{ \"status\": \"error\", \"message\": \"Validation failed\", \"data\": {}, \"errors\": \"Name is mandatory\" }"
+                        )
+                )
+        ),
+        @ApiResponse(
+                responseCode = "401",
+                description = "Unauthorized - JWT token is missing or invalid",
+                content = @Content(
+                        mediaType = "application/json",
+                        examples = @ExampleObject(
+                                value = "{ \"status\": \"error\", \"message\": \"Validation failed\", \"data\": " +
+                                        "{}, \"errors\": \"Not Authorized\" }"
+                        )
+                )
+        ),
+        @ApiResponse(
+                responseCode = "500",
+                description = "Internal Server Error - Unexpected server-side crash",
+                content = @Content(
+                        mediaType = "application/json",
+                        examples = @ExampleObject(
+                                value = "{ \"status\": \"error\", \"message\": \"Internal Server Error\", " +
+                                        "\"data\": " +
+                                        "{}, \"errors\": \"Internal server error\" }"
+                        )
+                )
+        )
+})
 public class HouseHoldController {
 
     private final HouseHoldService houseHoldService;
@@ -24,12 +69,28 @@ public class HouseHoldController {
     -------------------------------------------------- */
 
     @PostMapping
-    public ResponseEntity<?> createHouseHold(
+    @Operation(summary = "Create New HouseHold",
+    description = "Endpoint helps to create new household for the user")
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "201",
+                    description = "Household created successfully"
+            )
+    })
+    public ResponseEntity<ApiResponseDTO<HouseHoldDTO>> createHouseHold(
             @RequestBody HouseHold houseHold,
             @AuthenticationPrincipal User user) {
         return houseHoldService.makeHouseHold(houseHold, user);
     }
 
+    @Operation(summary = "Update HouseHold",
+            description = "Endpoint helps to update the houseHold only admin or owner can do it")
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Household updated successfully"
+            )
+    })
     @PatchMapping("/{houseHoldId}")
     public ResponseEntity<?> updateHouseHold(
             @PathVariable String houseHoldId,
@@ -38,11 +99,11 @@ public class HouseHoldController {
         return houseHoldService.updateHouseHold(houseHold, houseHoldId, user);
     }
 
-    @DeleteMapping("/{houseHoldId}")
+    @DeleteMapping("/{houseHoldId}/{deleteNow}")
     public ResponseEntity<?> deleteHouseHold(
             @PathVariable String houseHoldId,
-            @AuthenticationPrincipal User user) {
-        return houseHoldService.deleteHouseHold(houseHoldId, user);
+            @AuthenticationPrincipal User user, @PathVariable Boolean deleteNow) {
+        return houseHoldService.deleteHouseHold(houseHoldId, user, deleteNow);
     }
 
     /* -------------------------------------------------

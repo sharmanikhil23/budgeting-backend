@@ -3,14 +3,16 @@ package com.budgeting.backend.service;
 import com.budgeting.backend.configuration.CachingConfig;
 import com.budgeting.backend.configuration.HouseHoldSecurity;
 import com.budgeting.backend.dto.in.HouseHold;
+import com.budgeting.backend.dto.out.ApiResponseDTO;
+import com.budgeting.backend.dto.out.HouseHoldDTO;
 import com.budgeting.backend.entity.*;
 import com.budgeting.backend.global.PasswordHelper;
 import com.budgeting.backend.global.enums.Currency;
 import com.budgeting.backend.global.enums.HouseHoldRoles;
 import com.budgeting.backend.repository.HouseHoldCategoryRepository;
-import com.budgeting.backend.repository.HouseHoldMemberRepository;
 import com.budgeting.backend.repository.HouseHoldRepository;
 import com.budgeting.backend.repository.HouseHoldSubCategoryRepository;
+import com.budgeting.backend.service.cleanup.TransactionCleanupService;
 import org.bson.types.ObjectId;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +22,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.*;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -28,173 +31,156 @@ import java.util.HashMap;
 public class HouseHoldService {
 
     private final HouseHoldRepository houseHoldRepository;
-    private final HouseHoldMemberRepository houseHoldMemberRepository;
+    private final HouseHoldMemberService houseHoldMemberService;
     private final AuthenticationService authenticationService;
     private final HouseHoldSecurity houseHoldSecurity;
     private CacheManager cacheManager;
     private final HouseHoldCategoryRepository categoryRepository;
     private final HouseHoldSubCategoryRepository subCategoryRepository;
+    private final TransactionCleanupService transactionCleanupService; // Assuming this is injected
 
     @Value("${cache.life}") private long life;
 
     @Autowired
     public HouseHoldService(
             HouseHoldRepository houseHoldRepository,
-            HouseHoldMemberRepository houseHoldMemberRepository,
+            HouseHoldMemberService houseHoldMemberService,
             AuthenticationService authenticationService,
             HouseHoldSecurity houseHoldSecurity,
             CacheManager cacheManager,
             HouseHoldCategoryRepository categoryRepository,
-            HouseHoldSubCategoryRepository subCategoryRepository
+            HouseHoldSubCategoryRepository subCategoryRepository,
+            TransactionCleanupService transactionCleanupService
     ) {
         this.houseHoldRepository = houseHoldRepository;
-        this.houseHoldMemberRepository = houseHoldMemberRepository;
+        this.houseHoldMemberService = houseHoldMemberService;
         this.authenticationService = authenticationService;
         this.houseHoldSecurity = houseHoldSecurity;
         this.cacheManager = cacheManager;
         this.categoryRepository = categoryRepository;
         this.subCategoryRepository = subCategoryRepository;
+        this.transactionCleanupService = transactionCleanupService;
     }
 
-
     @Transactional
-    public ResponseEntity<HashMap<String,String>> makeHouseHold(HouseHold houseHold, User user) {
-
+    public ResponseEntity<ApiResponseDTO<HouseHoldDTO>> makeHouseHold(HouseHold houseHold, User user) {
         HouseHoldEntity entity = new HouseHoldEntity(houseHold, user.getId());
         entity = houseHoldRepository.save(entity);
 
-        HouseHoldMemberEntity owner = new HouseHoldMemberEntity(
-                entity.getId(),
-                user.getId(),
-                HouseHoldRoles.OWNER
-        );
+        houseHoldMemberService.saveOwner(entity.getId(), user.getId());
 
-        houseHoldMemberRepository.save(owner);
+        HouseHoldDTO dto = new HouseHoldDTO(entity);
+        ApiResponseDTO<HouseHoldDTO> response = new ApiResponseDTO<>("success", "Household created successfully", dto, null);
 
-        HouseHoldEntity finalEntity = entity;
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(
-                new HashMap<>() {{
-                    put("status", "success");
-                    put("message", "Household created successfully");
-                    put("houseHoldId", finalEntity.getId().toString());
-                }}
-        );
+        return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
     @Transactional
     @PreAuthorize("@houseHoldSecurity.isAdminOrOwner(#houseHoldId, #userId)")
-    public ResponseEntity<HashMap<String,String>> getInviteCode(String houseHoldId, User userId) {
-
+    public ResponseEntity<ApiResponseDTO<Map<String, String>>> getInviteCode(String houseHoldId, User userId) {
         ObjectId householdObjectId = new ObjectId(houseHoldId);
 
         if (!houseHoldRepository.existsById(householdObjectId)) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new HashMap<>() {{
-                        put("status", "error");
-                        put("message", "Household not found");
-                    }}
-            );
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ApiResponseDTO<>("error", "Household not found", null, "NOT_FOUND"));
         }
 
         String inviteCode = PasswordHelper.generateInviteCode();
+        CachingConfig.InviteInfo inviteInfo = new CachingConfig.InviteInfo(householdObjectId);
 
-        CachingConfig.InviteInfo inviteInfo =
-                new CachingConfig.InviteInfo(householdObjectId);
+        cacheManager.getCache(CachingConfig.INVITE_CODES_CACHE).put(inviteCode, inviteInfo);
 
-        cacheManager
-                .getCache(CachingConfig.INVITE_CODES_CACHE)
-                .put(inviteCode, inviteInfo);
+        Map<String, String> data = new HashMap<>();
+        data.put("inviteCode", inviteCode);
+        data.put("expiresInMinutes", life + "ms");
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(
-                new HashMap<>() {{
-                    put("status", "success");
-                    put("inviteCode", inviteCode);
-                    put("expiresInMinutes",life+ "ms");
-                }}
-        );
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(new ApiResponseDTO<>("success", "Invite code generated", data, null));
     }
 
     @Transactional
-    public ResponseEntity<?> addUsersInHouseHold(String inviteCode, User userId) {
-
+    public ResponseEntity<ApiResponseDTO<Map<String, String>>> addUsersInHouseHold(String inviteCode, User userId) {
         var cache = cacheManager.getCache(CachingConfig.INVITE_CODES_CACHE);
-
-        CachingConfig.InviteInfo inviteInfo =
-                cache.get(inviteCode, CachingConfig.InviteInfo.class);
+        CachingConfig.InviteInfo inviteInfo = cache.get(inviteCode, CachingConfig.InviteInfo.class);
 
         if (inviteInfo == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new HashMap<>() {{
-                        put("status", "error");
-                        put("message", "Invalid or expired invite code");
-                    }}
-            );
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ApiResponseDTO<>("error", "Invalid or expired invite code", null, "INVALID_CODE"));
         }
 
-        // prevent reuse
         cache.evict(inviteCode);
 
-        boolean alreadyMember =
-                houseHoldMemberRepository
-                        .findByHouseholdIdAndUserId(inviteInfo.houseHoldId(), userId.getId()).orElse(null) != null;
+        boolean alreadyMember = houseHoldMemberService.findByHouseholdIdAndUserId(inviteInfo.houseHoldId(), userId.getId()) != null;
 
         if (alreadyMember) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(
-                    new HashMap<>() {{
-                        put("status", "error");
-                        put("message", "User already part of household");
-                    }}
-            );
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new ApiResponseDTO<>("error", "User already part of household", null, "ALREADY_MEMBER"));
         }
 
-        HouseHoldMemberEntity member = new HouseHoldMemberEntity(
-                inviteInfo.houseHoldId(),
-                userId.getId(),
-                HouseHoldRoles.MEMBER
-        );
+        houseHoldMemberService.saveMember(inviteInfo.houseHoldId(), userId.getId());
 
-        houseHoldMemberRepository.save(member);
+        Map<String, String> data = new HashMap<>();
+        data.put("houseHoldId", inviteInfo.houseHoldId().toString());
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(
-                new HashMap<>() {{
-                    put("status", "success");
-                    put("message", "Joined household successfully");
-                    put("houseHoldId", inviteInfo.houseHoldId().toString());
-                }}
-        );
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(new ApiResponseDTO<>("success", "Joined household successfully", data, null));
     }
 
     @Transactional
     @PreAuthorize("@houseHoldSecurity.isAdminOrOwner(#houseHoldId, #user.id)")
-    public ResponseEntity<?> updateHouseHold(HouseHold houseHold, String houseHoldId, User user) {
-
-        HouseHoldEntity entity = houseHoldRepository
-                .findById(new ObjectId(houseHoldId))
+    public ResponseEntity<ApiResponseDTO<HouseHoldDTO>> updateHouseHold(HouseHold houseHold, String houseHoldId, User user) {
+        HouseHoldEntity entity = houseHoldRepository.findById(new ObjectId(houseHoldId))
                 .orElseThrow(() -> new IllegalArgumentException("Household not found"));
 
-        entity.setUpdatedAt(Instant.now());
         entity.setName(houseHold.getName());
         entity.setCurrency(Currency.valueOf(houseHold.getCurrency()));
+        entity.setUpdatedAt(Instant.now());
+        entity.setUpdatedBy(user.getId());
 
-        houseHoldRepository.save(entity);
+        entity = houseHoldRepository.save(entity);
 
-        return ResponseEntity.ok(
-                new HashMap<>() {{
-                    put("status", "success");
-                    put("houseHoldId", entity.getId().toString());
-                }}
-        );
+        HouseHoldDTO dto = new HouseHoldDTO(entity);
+        return ResponseEntity.ok(new ApiResponseDTO<>("success", "Updated successfully", dto, null));
     }
 
-    @PreAuthorize("@houseHoldSecurity.isAdminOrOwner(#houseHoldId, #user.id)")
-    public ResponseEntity<?> deleteHouseHold(String houseHoldId, User user){
-        houseHoldRepository.deleteById(new ObjectId(houseHoldId));
-        if(houseHoldRepository.findById(new ObjectId(houseHoldId)).orElse(null) == null){
-            return new ResponseEntity<>(HttpStatus.OK);
-        }else{
-            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+    @Transactional
+    @PreAuthorize("@houseHoldSecurity.isOwner(#houseHoldId, #user.id)")
+    public ResponseEntity<ApiResponseDTO<Object>> deleteHouseHold(String houseHoldId, User user, Boolean deleteNow) {
+        ObjectId householdObjectId = new ObjectId(houseHoldId);
+        HouseHoldEntity entity = houseHoldRepository.findById(householdObjectId)
+                .orElseThrow(() -> new IllegalArgumentException("Household not found"));
+
+        if (deleteNow) {
+            performFullSystemPurge(houseHoldId);
+            return ResponseEntity.ok(new ApiResponseDTO<>("success", "Household and all associated data purged permanently", null, null));
+        } else {
+            entity.setDeleted(true);
+            entity.setDeletedBy(user.getId());
+            entity.setDeletedAt(Instant.now());
+            // Ensure HouseHoldEntity has purgeDate field
+            entity.setPurgeDate(Instant.now().plus(7, java.time.temporal.ChronoUnit.DAYS));
+
+            houseHoldRepository.save(entity);
+            return ResponseEntity.ok(new ApiResponseDTO<>("success", "Household scheduled for deletion. You have 7 days to recover it.", null, null));
         }
     }
 
+    private void performFullSystemPurge(String houseHoldId) {
+        ObjectId householdObjectId = new ObjectId(houseHoldId);
+
+        List<HouseHoldMemberEntity> houseHoldMemberEntityList =
+                houseHoldMemberService.findAllByHouseholdId(houseHoldId);
+
+        // deleting all the transaction and its auditing from one userAtTime
+        for(int i=0;i<houseHoldMemberEntityList.size();i++){
+            transactionCleanupService.hardDeleteUserData(houseHoldMemberEntityList.get(i).getUserId(), householdObjectId);
+        }
+
+        // Now deleting all the householder members from "household members" entity
+        houseHoldMemberService.deleteAllByHouseholdId(householdObjectId);
+
+        // todo now will be deleting all of the HouseholdCategoryMonthly as well as other left over data like
+        // HouseHoldCategory, SubCategory
+
+    }
 }
